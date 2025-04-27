@@ -1,17 +1,18 @@
 #include "../include/lua/binding.h"
 #include "../include/utils/logger.h"
+#include "sol/protected_function_result.hpp"
 #include "utils/net.h"
 #include <exception>
 #include <string>
 
 namespace lua {
 Binding::Binding() {};
-Binding::~Binding() {};
+Binding::~Binding() { shutdown(); };
 
 void Binding::initialize() {
   utils::Logger::info("Initializing Lua bindings...");
   lua.open_libraries(sol::lib::base, sol::lib::package);
-  lua.set_function("http_get", &utils::net::http_get);
+  lua.set_function("http_get", &utils::net::http_get, utils::net());
 }
 
 bool Binding::load_script(const std::string &path) {
@@ -48,7 +49,13 @@ sol::object Binding::run_function(const std::string &path,
                          path);
     }
     utils::Logger::info("Calling function " + func_name + " in script " + path);
-    return func();
+    sol::protected_function_result result = func();
+    if (!result.valid()) {
+      utils::Logger::warn("Function " + func_name + " in script " + path +
+                          " returned no value");
+      return sol::nil;
+    }
+    return result;
   } catch (sol::error &e) {
     utils::Logger::err("While trying to run extension function:");
     utils::Logger::err(e.what());
@@ -58,6 +65,9 @@ sol::object Binding::run_function(const std::string &path,
 
 void Binding::shutdown() {
   utils::Logger::info("Shutting down Lua bindings...");
-  lua.clear_package_loaders();
+  loaded_scripts.clear();
+  lua = sol::state();
+
+  utils::Logger::info("Lua bindings successfuly shut down.");
 }
 } // namespace lua
